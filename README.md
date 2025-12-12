@@ -1,5 +1,5 @@
 # 奖励哥是王的官方网站
-[![](https://img.dfrobot.com.cn//5c9b173d3ff6f3101116c01b/54fb65453dc6588526809577899df3d7.jpg)](https://mindplus.cc)
+[![]((https://s3.bmp.ovh/imgs/2025/12/12/f388ef5c90afbee9.jpg)
 * * *
 
 ## [mind+论坛](https://mc.dfrobot.com.cn/forum-165-14.html)
