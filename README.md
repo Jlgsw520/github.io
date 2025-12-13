@@ -35,3 +35,11 @@
 ## [下载奖励OS3.5](https://mc.dfrobot.com.cn/data/attachment/forum/202408/26/163900zxaeama82vgaqapm.zip)
 
 ## [下载奖励OS3.0](https://mc.dfrobot.com.cn/data/attachment/forum/202408/25/220730pv85ryaur50tictr.zip)
+
+## [下载奖励OS2.5](https://mc.dfrobot.com.cn/data/attachment/forum/202408/21/213121wxri6bcbervrrsri.zip)
+
+## [下载奖励OS2.0](https://mc.dfrobot.com.cn/data/attachment/forum/202408/16/220804stalttgwrwa8x9tt.zip)
+
+## [下载奖励OS1.0（星空特别版）](https://mc.dfrobot.com.cn/forum.php?mod=attachment&aid=MTc1MjgyfDA3ZDhkZTI0fDE3NjU1ODg2MDl8ODY0Mjg4fDMxOTc1Mg%3D%3D)
+
+## [下载奖励OS1.0](https://mc.dfrobot.com.cn/forum.php?mod=attachment&aid=MTczNzc4fGUyOTM5YjFlfDE3NjU1ODg2NzF8ODY0Mjg4fDMxOTc0Ng%3D%3D)
