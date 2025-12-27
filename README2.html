@@ -18,7 +18,6 @@
         .status { margin-top: 1rem; padding: 0.7rem; border-radius: 4px; text-align: center; display: none; font-size: 0.9rem; }
         .success { background: #E8F5E9; color: #2E7D32; display: block; }
         .error { background: #FFEBEE; color: #C62828; display: block; }
-        .cors-error { background: #FFF3E0; color: #E65100; display: block; }
     </style>
 </head>
 <body>
@@ -33,14 +32,14 @@
         <div id="status" class="status"></div>
     </div>
     <script>
-        const TINY_WEBDB_URL = "https://tinywebdb.appinventor.space/api"; // 必须是HTTPS
+        const TINY_WEBDB_URL = "http://tinywebdb.appinventor.space/api";
         const USER = "jlgswlt";
         const SECRET = "9d786d30";
         const messageEl = document.getElementById("message");
         const echoBoxEl = document.getElementById("echoBox");
         const statusEl = document.getElementById("status");
-        const TAG_PREFIX = "echo_";
         const ALL_TAGS_TAG = "echo_all_tags";
+        const TAG_PREFIX = "echo_";
 
         function showStatus(text, type = "error") {
             statusEl.textContent = text;
@@ -48,78 +47,36 @@
             setTimeout(() => statusEl.className = "status", 3000);
         }
 
-        // 提交留言
+        // 提交留言：强制把标签加入echo_all_tags
         document.getElementById("submitBtn").addEventListener("click", () => {
             const msg = messageEl.value.trim();
             if (!msg) return showStatus("请输入内容！");
             
             const tag = `${TAG_PREFIX}${Date.now()}`;
+            // 1. 发送留言
             fetch(TINY_WEBDB_URL, {
                 method: "POST",
                 body: new URLSearchParams({ action: "update", tag, value: msg, user: USER, secret: SECRET }),
                 headers: { "Content-Type": "application/x-www-form-urlencoded" }
             })
-            .then(res => {
-                if (!res.ok) throw new Error("服务器响应异常");
-                return res.json();
-            })
+            .then(res => res.json())
             .then(res => {
                 if (res.result === "OK") {
                     showStatus("发送成功！", "success");
                     messageEl.value = "";
-                    updateTagList(tag);
+                    // 2. 强制更新echo_all_tags，不管原来有没有值
+                    updateTagListForce(tag);
                 } else showStatus("发送失败：" + res.result);
             })
             .catch(err => {
-                if (err.message.includes("CORS") || err.message.includes("跨域")) {
-                    showStatus("跨域错误！请配置服务器CORS", "cors-error");
-                } else if (err.message.includes("mixed")) {
-                    showStatus("混合内容错误！请用HTTPS服务器");
-                } else {
-                    showStatus("网络错误：" + err.message);
-                }
-                console.error("提交失败：", err);
+                showStatus("网络错误：" + err.message);
+                console.error(err);
             });
         });
 
-        // 随机读留言
-        document.getElementById("randomBtn").addEventListener("click", () => {
-            fetch(TINY_WEBDB_URL, {
-                method: "POST",
-                body: new URLSearchParams({ action: "get", tag: ALL_TAGS_TAG, user: USER, secret: SECRET }),
-                headers: { "Content-Type": "application/x-www-form-urlencoded" }
-            })
-            .then(res => {
-                if (!res.ok) throw new Error("服务器响应异常");
-                return res.json();
-            })
-            .then(res => {
-                if (!res.result === "OK" || !res.value) return showStatus("暂无留言");
-                const tags = JSON.parse(res.value);
-                if (tags.length === 0) return showStatus("暂无留言");
-                
-                const randomTag = tags[Math.floor(Math.random() * tags.length)];
-                return fetch(TINY_WEBDB_URL, {
-                    method: "POST",
-                    body: new URLSearchParams({ action: "get", tag: randomTag, user: USER, secret: SECRET }),
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-                }).then(res => res.json());
-            })
-            .then(res => {
-                if (res?.result === "OK" && res.value) {
-                    echoBoxEl.textContent = res.value;
-                    showStatus("听到回声啦~", "success");
-                } else showStatus("未找到这条回声");
-            })
-            .catch(err => {
-                if (err.message.includes("CORS")) showStatus("跨域错误！请配置服务器CORS", "cors-error");
-                else showStatus("读取失败：" + err.message);
-                console.error("读取失败：", err);
-            });
-        });
-
-        // 单独更新标签列表
-        function updateTagList(newTag) {
+        // 强制更新标签列表（覆盖空值问题）
+        function updateTagListForce(newTag) {
+            // 先读现有标签
             fetch(TINY_WEBDB_URL, {
                 method: "POST",
                 body: new URLSearchParams({ action: "get", tag: ALL_TAGS_TAG, user: USER, secret: SECRET }),
@@ -127,15 +84,69 @@
             })
             .then(res => res.json())
             .then(res => {
-                let tags = res.result === "OK" && res.value ? JSON.parse(res.value) : [];
+                let tags = [];
+                // 即使原有值为空/格式错，也初始化为数组
+                if (res.result === "OK" && res.value) {
+                    try { tags = JSON.parse(res.value); } catch (e) { tags = []; }
+                }
+                // 去重+加新标签
                 if (!tags.includes(newTag)) tags.push(newTag);
+                // 写回服务器
                 return fetch(TINY_WEBDB_URL, {
                     method: "POST",
                     body: new URLSearchParams({ action: "update", tag: ALL_TAGS_TAG, value: JSON.stringify(tags), user: USER, secret: SECRET }),
                     headers: { "Content-Type": "application/x-www-form-urlencoded" }
                 });
-            }).catch(err => console.error("更新标签失败：", err));
+            })
+            .catch(err => console.error("更新标签失败：", err));
         }
+
+        // 随机读回声：兼容标签列表的各种情况
+        document.getElementById("randomBtn").addEventListener("click", () => {
+            fetch(TINY_WEBDB_URL, {
+                method: "POST",
+                body: new URLSearchParams({ action: "get", tag: ALL_TAGS_TAG, user: USER, secret: SECRET }),
+                headers: { "Content-Type": "application/x-www-form-urlencoded" }
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (!res.result === "OK" || !res.value) {
+                    echoBoxEl.textContent = "暂无回声~";
+                    return;
+                }
+                let tags = [];
+                try { tags = JSON.parse(res.value); } catch (e) {
+                    echoBoxEl.textContent = "标签列表损坏";
+                    showStatus("数据异常");
+                    return;
+                }
+                if (tags.length === 0) {
+                    echoBoxEl.textContent = "暂无回声~";
+                    return;
+                }
+                // 随机选一个
+                const randomTag = tags[Math.floor(Math.random() * tags.length)];
+                // 读对应内容
+                fetch(TINY_WEBDB_URL, {
+                    method: "POST",
+                    body: new URLSearchParams({ action: "get", tag: randomTag, user: USER, secret: SECRET }),
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+                })
+                .then(res => res.json())
+                .then(contentRes => {
+                    if (contentRes.result === "OK" && contentRes.value) {
+                        echoBoxEl.textContent = contentRes.value;
+                        showStatus("听到回声啦~", "success");
+                    } else {
+                        echoBoxEl.textContent = "这条回声不见了";
+                    }
+                });
+            })
+            .catch(err => {
+                echoBoxEl.textContent = "网络出错了";
+                console.error(err);
+            });
+        });
     </script>
 </body>
 </html>
