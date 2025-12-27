@@ -32,121 +32,153 @@
         <div id="status" class="status"></div>
     </div>
     <script>
+        // 基础配置（和之前一致）
         const TINY_WEBDB_URL = "http://tinywebdb.appinventor.space/api";
         const USER = "jlgswlt";
         const SECRET = "9d786d30";
-        const messageEl = document.getElementById("message");
-        const echoBoxEl = document.getElementById("echoBox");
-        const statusEl = document.getElementById("status");
-        const ALL_TAGS_TAG = "echo_all_tags";
+        const ALL_TAGS_TAG = "echo_all_tags"; // 存储所有留言标签的总标签
         const TAG_PREFIX = "echo_";
 
-        function showStatus(text, type = "error") {
-            statusEl.textContent = text;
-            statusEl.className = `status ${type}`;
-            setTimeout(() => statusEl.className = "status", 3000);
+        // 元素获取
+        const msgInput = document.getElementById("message");
+        const echoBox = document.getElementById("echoBox");
+        const statusBox = document.getElementById("status");
+
+        // 简单的提示框函数
+        function showTip(text, isSuccess = false) {
+            statusBox.textContent = text;
+            statusBox.className = isSuccess ? "status success" : "status error";
+            setTimeout(() => statusBox.className = "status", 3000);
         }
 
-        // 提交留言：强制把标签加入echo_all_tags
-        document.getElementById("submitBtn").addEventListener("click", () => {
-            const msg = messageEl.value.trim();
-            if (!msg) return showStatus("请输入内容！");
-            
-            const tag = `${TAG_PREFIX}${Date.now()}`;
-            // 1. 发送留言
+        // 【核心1】发送留言 + 自动同步标签（极简逻辑）
+        document.getElementById("submitBtn").onclick = function() {
+            const content = msgInput.value.trim();
+            if (!content) {
+                showTip("请输入要发送的内容！");
+                return;
+            }
+
+            // 生成唯一标签（时间戳）
+            const newTag = TAG_PREFIX + Date.now();
+            // 1. 先发送留言到服务器
             fetch(TINY_WEBDB_URL, {
                 method: "POST",
-                body: new URLSearchParams({ action: "update", tag, value: msg, user: USER, secret: SECRET }),
+                body: new URLSearchParams({
+                    action: "update",
+                    tag: newTag,
+                    value: content,
+                    user: USER,
+                    secret: SECRET
+                }),
                 headers: { "Content-Type": "application/x-www-form-urlencoded" }
             })
             .then(res => res.json())
             .then(res => {
                 if (res.result === "OK") {
-                    showStatus("发送成功！", "success");
-                    messageEl.value = "";
-                    // 2. 强制更新echo_all_tags，不管原来有没有值
-                    updateTagListForce(tag);
-                } else showStatus("发送失败：" + res.result);
+                    showTip("发送成功！", true);
+                    msgInput.value = "";
+                    // 2. 发送成功后，自动把新标签加到总标签里
+                    addTagToTotalList(newTag);
+                } else {
+                    showTip("发送失败，服务器返回异常");
+                }
             })
-            .catch(err => {
-                showStatus("网络错误：" + err.message);
-                console.error(err);
-            });
-        });
+            .catch(() => showTip("网络出错，发送失败"));
+        };
 
-        // 强制更新标签列表（覆盖空值问题）
-        function updateTagListForce(newTag) {
-            // 先读现有标签
+        // 【核心2】把新标签加到服务器的总标签列表里
+        function addTagToTotalList(newTag) {
+            // 先获取服务器里现有的总标签列表
             fetch(TINY_WEBDB_URL, {
                 method: "POST",
-                body: new URLSearchParams({ action: "get", tag: ALL_TAGS_TAG, user: USER, secret: SECRET }),
+                body: new URLSearchParams({
+                    action: "get",
+                    tag: ALL_TAGS_TAG,
+                    user: USER,
+                    secret: SECRET
+                }),
                 headers: { "Content-Type": "application/x-www-form-urlencoded" }
             })
             .then(res => res.json())
             .then(res => {
-                let tags = [];
-                // 即使原有值为空/格式错，也初始化为数组
+                // 解析现有标签列表，解析失败就初始化为空数组
+                let tagList = [];
                 if (res.result === "OK" && res.value) {
-                    try { tags = JSON.parse(res.value); } catch (e) { tags = []; }
+                    try { tagList = JSON.parse(res.value); } catch (e) {}
                 }
-                // 去重+加新标签
-                if (!tags.includes(newTag)) tags.push(newTag);
-                // 写回服务器
-                return fetch(TINY_WEBDB_URL, {
-                    method: "POST",
-                    body: new URLSearchParams({ action: "update", tag: ALL_TAGS_TAG, value: JSON.stringify(tags), user: USER, secret: SECRET }),
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-                });
-            })
-            .catch(err => console.error("更新标签失败：", err));
-        }
-
-        // 随机读回声：兼容标签列表的各种情况
-        document.getElementById("randomBtn").addEventListener("click", () => {
-            fetch(TINY_WEBDB_URL, {
-                method: "POST",
-                body: new URLSearchParams({ action: "get", tag: ALL_TAGS_TAG, user: USER, secret: SECRET }),
-                headers: { "Content-Type": "application/x-www-form-urlencoded" }
-            })
-            .then(res => res.json())
-            .then(res => {
-                if (!res.result === "OK" || !res.value) {
-                    echoBoxEl.textContent = "暂无回声~";
-                    return;
+                // 避免重复添加标签
+                if (!tagList.includes(newTag)) {
+                    tagList.push(newTag);
                 }
-                let tags = [];
-                try { tags = JSON.parse(res.value); } catch (e) {
-                    echoBoxEl.textContent = "标签列表损坏";
-                    showStatus("数据异常");
-                    return;
-                }
-                if (tags.length === 0) {
-                    echoBoxEl.textContent = "暂无回声~";
-                    return;
-                }
-                // 随机选一个
-                const randomTag = tags[Math.floor(Math.random() * tags.length)];
-                // 读对应内容
+                // 把更新后的标签列表存回服务器
                 fetch(TINY_WEBDB_URL, {
                     method: "POST",
-                    body: new URLSearchParams({ action: "get", tag: randomTag, user: USER, secret: SECRET }),
+                    body: new URLSearchParams({
+                        action: "update",
+                        tag: ALL_TAGS_TAG,
+                        value: JSON.stringify(tagList),
+                        user: USER,
+                        secret: SECRET
+                    }),
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+                });
+            });
+        }
+
+        // 【核心3】随机读取回声（从服务器总标签里选）
+        document.getElementById("randomBtn").onclick = function() {
+            // 先从服务器获取所有留言标签
+            fetch(TINY_WEBDB_URL, {
+                method: "POST",
+                body: new URLSearchParams({
+                    action: "get",
+                    tag: ALL_TAGS_TAG,
+                    user: USER,
+                    secret: SECRET
+                }),
+                headers: { "Content-Type": "application/x-www-form-urlencoded" }
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (res.result !== "OK" || !res.value) {
+                    echoBox.textContent = "暂无回声哦~";
+                    return;
+                }
+                // 解析标签列表
+                let tagList = [];
+                try { tagList = JSON.parse(res.value); } catch (e) {
+                    echoBox.textContent = "标签列表异常";
+                    return;
+                }
+                if (tagList.length === 0) {
+                    echoBox.textContent = "暂无回声哦~";
+                    return;
+                }
+                // 随机选一个标签读内容
+                const randomTag = tagList[Math.floor(Math.random() * tagList.length)];
+                fetch(TINY_WEBDB_URL, {
+                    method: "POST",
+                    body: new URLSearchParams({
+                        action: "get",
+                        tag: randomTag,
+                        user: USER,
+                        secret: SECRET
+                    }),
                     headers: { "Content-Type": "application/x-www-form-urlencoded" }
                 })
                 .then(res => res.json())
-                .then(contentRes => {
-                    if (contentRes.result === "OK" && contentRes.value) {
-                        echoBoxEl.textContent = contentRes.value;
-                        showStatus("听到回声啦~", "success");
+                .then(res => {
+                    if (res.result === "OK" && res.value) {
+                        echoBox.textContent = res.value;
+                        showTip("听到回声啦~", true);
                     } else {
-                        echoBoxEl.textContent = "这条回声不见了";
+                        echoBox.textContent = "这条回声不见了";
                     }
                 });
             })
-            .catch(err => {
-                echoBoxEl.textContent = "网络出错了";
-                console.error(err);
-            });
-        });
+            .catch(() => echoBox.textContent = "网络出错了");
+        };
     </script>
 </body>
 </html>
