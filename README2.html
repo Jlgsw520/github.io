@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>回声洞</title>
     <style>
-        * { 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
-            font-family: sans-serif; 
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: sans-serif;
         }
         html, body {
             height: 100%;
@@ -116,21 +116,19 @@
         <div id="echoBox">等待回声...</div>
         <div id="status" class="status"></div>
     </div>
-
     <script>
-        // 专用TinyWebDB服务器配置
-        const TINY_WEBDB_URL = "http://tinywebdb.appinventor.space/api";
+        // 专用TinyWebDB服务器配置（优先用HTTPS，若没有则需后端配置跨域）
+        const TINY_WEBDB_URL = "https://tinywebdb.appinventor.space/api"; // 改为HTTPS
         const USER = "jlgswlt";
         const SECRET = "9d786d30";
-
         const messageEl = document.getElementById("message");
         const echoBoxEl = document.getElementById("echoBox");
         const statusEl = document.getElementById("status");
         const submitBtn = document.getElementById("submitBtn");
         const randomBtn = document.getElementById("randomBtn");
-
-        // 存储所有留言的tag前缀
+        // 存储所有留言的tag前缀 + 存储所有tag的总标签
         const TAG_PREFIX = "echo_";
+        const ALL_TAGS_TAG = "echo_all_tags"; // 专门存储所有留言tag的标签
 
         // 提交留言
         submitBtn.addEventListener("click", () => {
@@ -139,9 +137,9 @@
                 showStatus("请输入要发送的内容！", "error");
                 return;
             }
-
             // 生成唯一tag：前缀 + 时间戳
             const tag = `${TAG_PREFIX}${new Date().getTime()}`;
+            // 1. 先提交留言内容
             const data = {
                 action: "update",
                 tag: tag,
@@ -149,7 +147,6 @@
                 user: USER,
                 secret: SECRET
             };
-
             fetch(TINY_WEBDB_URL, {
                 method: "POST",
                 body: new URLSearchParams(data),
@@ -158,28 +155,114 @@
             .then(res => res.json())
             .then(res => {
                 if (res.result === "OK") {
-                    showStatus("回声发送成功！", "success");
-                    messageEl.value = ""; // 清空输入框
+                    // 2. 再获取已有的所有tag，添加新tag后存回去
+                    return fetch(TINY_WEBDB_URL, {
+                        method: "POST",
+                        body: new URLSearchParams({
+                            action: "get",
+                            tag: ALL_TAGS_TAG,
+                            user: USER,
+                            secret: SECRET
+                        }),
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+                    })
+                    .then(res => res.json())
+                    .then(tagRes => {
+                        let allTags = [];
+                        if (tagRes.result === "OK" && tagRes.value) {
+                            allTags = JSON.parse(tagRes.value);
+                        }
+                        allTags.push(tag);
+                        // 把更新后的所有tag存回去
+                        return fetch(TINY_WEBDB_URL, {
+                            method: "POST",
+                            body: new URLSearchParams({
+                                action: "update",
+                                tag: ALL_TAGS_TAG,
+                                value: JSON.stringify(allTags),
+                                user: USER,
+                                secret: SECRET
+                            }),
+                            headers: { "Content-Type": "application/x-www-form-urlencoded" }
+                        });
+                    })
+                    .then(() => {
+                        showStatus("回声发送成功！", "success");
+                        messageEl.value = "";
+                    });
                 } else {
                     showStatus("发送失败，请稍后重试！", "error");
                 }
             })
             .catch(err => {
-                showStatus("网络错误，请检查连接！", "error");
+                showStatus("网络错误/跨域限制，请检查服务器配置！", "error");
                 console.error(err);
             });
         });
 
-        // 随机获取一条留言
+        // 随机获取一条留言（先获取所有tag，再随机选一个）
         randomBtn.addEventListener("click", () => {
-            // 生成近30天内的随机时间戳tag尝试获取
-            const recentTime = Date.now() - 30 * 24 * 60 * 60 * 1000; // 近30天
-            const randomTime = Math.floor(Math.random() * (Date.now() - recentTime)) + recentTime;
-            const randomTag = `${TAG_PREFIX}${randomTime}`;
+            fetch(TINY_WEBDB_URL, {
+                method: "POST",
+                body: new URLSearchParams({
+                    action: "get",
+                    tag: ALL_TAGS_TAG,
+                    user: USER,
+                    secret: SECRET
+                }),
+                headers: { "Content-Type": "application/x-www-form-urlencoded" }
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (res.result === "OK" && res.value) {
+                    const allTags = JSON.parse(res.value);
+                    if (allTags.length === 0) {
+                        echoBoxEl.textContent = "暂时没有任何回声哦~";
+                        showStatus("暂无留言", "error");
+                        return;
+                    }
+                    // 随机选一个tag
+                    const randomTag = allTags[Math.floor(Math.random() * allTags.length)];
+                    // 根据随机tag获取留言内容
+                    return fetch(TINY_WEBDB_URL, {
+                        method: "POST",
+                        body: new URLSearchParams({
+                            action: "get",
+                            tag: randomTag,
+                            user: USER,
+                            secret: SECRET
+                        }),
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" }
+                    })
+                    .then(res => res.json())
+                    .then(contentRes => {
+                        if (contentRes.result === "OK" && contentRes.value) {
+                            echoBoxEl.textContent = contentRes.value;
+                            showStatus("听到一条回声~", "success");
+                        } else {
+                            echoBoxEl.textContent = "这条回声不见了...";
+                            showStatus("留言获取失败", "error");
+                        }
+                    });
+                } else {
+                    echoBoxEl.textContent = "暂时没有听到回声，换个运气试试吧！";
+                    showStatus("未找到留言", "error");
+                }
+            })
+            .catch(err => {
+                echoBoxEl.textContent = "网络出错了...";
+                console.error(err);
+            });
+        });
 
-            const data = {
-                action: "get",
-                tag: randomTag,
-                user: USER,
-                secret: SECRET
-            };
+        // 显示状态提示
+        function showStatus(text, type) {
+            statusEl.textContent = text;
+            statusEl.className = `status ${type}`;
+            setTimeout(() => {
+                statusEl.className = "status";
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
